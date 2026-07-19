@@ -3,7 +3,7 @@ const fs   = require("fs");
 const path = require("path");
 const { pool } = require("../src/config/db");
 
-const FILES = ["001_initial.sql"];
+const FILES = ["001_initial.sql", "002_add_orders.sql"];
 
 const run = async () => {
   const client = await pool.connect();

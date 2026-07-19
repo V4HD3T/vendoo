@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect, useRef, memo } from "react";
 import {
   ShoppingCart, Heart, Search, X, Plus, Minus, Trash2, Package,
   LogOut, BarChart3, Edit2, Trash, CheckCircle, AlertCircle,
-  ChevronRight, Eye, EyeOff, ArrowLeft, Loader2
+  ChevronRight, Eye, EyeOff, ArrowLeft, Loader2, ClipboardList, Truck
 } from "lucide-react";
 import * as api from "./api";
 
@@ -204,10 +204,12 @@ function AuthScreen({ onLogin }) {
 }
 
 // ─── PRODUCT CARD ─────────────────────────────────────────────────────────────
-const ProductCard = memo(({ p, cartQty, isFav, added, onAdd, onToggleFav, favLoading }) => {
+const ProductCard = memo(({ p, cartQty, isFav, added, onAdd, onToggleFav, onOpen, favLoading }) => {
   const price = fp(p), outOfStock = p.stock === 0, lowStock = p.stock > 0 && p.stock <= 5;
   return (
-    <div style={{ background:"#fff", borderRadius:16, border:p.seller_id?"1.5px solid #7C3AED22":"1px solid #F0EDE6", overflow:"hidden", transition:"transform .2s,box-shadow .2s" }}
+    <div style={{ background:"#fff", borderRadius:16, border:p.seller_id?"1.5px solid #7C3AED22":"1px solid #F0EDE6", overflow:"hidden", transition:"transform .2s,box-shadow .2s", cursor:"pointer" }}
+      onClick={() => onOpen(p.id)} role="button" tabIndex={0}
+      onKeyDown={e => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen(p.id))}
       onMouseEnter={e => { e.currentTarget.style.transform="translateY(-3px)"; e.currentTarget.style.boxShadow="0 8px 24px rgba(0,0,0,.10)"; }}
       onMouseLeave={e => { e.currentTarget.style.transform="none"; e.currentTarget.style.boxShadow="none"; }}>
       <div style={{ background:"#F8F7F4", height:160, display:"flex", alignItems:"center", justifyContent:"center", fontSize:64, position:"relative" }}>
@@ -215,7 +217,7 @@ const ProductCard = memo(({ p, cartQty, isFav, added, onAdd, onToggleFav, favLoa
         {p.seller_id && !p.discount && <div style={{ position:"absolute", top:10, left:10, background:"#7C3AED", color:"#fff", fontSize:9, fontWeight:700, padding:"3px 8px", borderRadius:20 }}>SELLER PRODUCT</div>}
         {outOfStock && <div style={{ position:"absolute", inset:0, background:"rgba(255,255,255,.65)", display:"flex", alignItems:"center", justifyContent:"center" }}><span style={{ fontSize:12, fontWeight:700, color:"#9CA3AF", background:"#fff", padding:"4px 10px", borderRadius:20, border:"1px solid #E5E7EB" }}>Out of Stock</span></div>}
         <span style={{ opacity:outOfStock?.4:1 }}>{p.emoji}</span>
-        <button onClick={() => onToggleFav(p.id)} disabled={favLoading} aria-label={isFav?"Remove from favorites":"Add to favorites"}
+        <button onClick={e => { e.stopPropagation(); onToggleFav(p.id); }} disabled={favLoading} aria-label={isFav?"Remove from favorites":"Add to favorites"}
           style={{ position:"absolute", top:10, right:10, background:"rgba(255,255,255,.9)", border:"none", borderRadius:"50%", width:32, height:32, display:"flex", alignItems:"center", justifyContent:"center", cursor:favLoading?"wait":"pointer", color:isFav?"#E8521A":"#9CA3AF" }}>
           {favLoading ? <Spinner size={14}/> : <Heart size={16} fill={isFav?"#E8521A":"none"} strokeWidth={2}/>}
         </button>
@@ -233,7 +235,7 @@ const ProductCard = memo(({ p, cartQty, isFav, added, onAdd, onToggleFav, favLoa
           {p.discount > 0 && <span style={{ fontSize:13, color:"#9CA3AF", textDecoration:"line-through" }}>{fmt(+p.price)}</span>}
         </div>
         {lowStock && <div style={{ fontSize:11, color:"#C24A00", fontWeight:600, marginBottom:6 }}>⚡ Only {p.stock} left!</div>}
-        <button onClick={() => !outOfStock && onAdd(p.id)} disabled={outOfStock || added}
+        <button onClick={e => { e.stopPropagation(); !outOfStock && onAdd(p.id); }} disabled={outOfStock || added}
           style={{ width:"100%", padding:"9px", borderRadius:10, border:"none", background:outOfStock?"#E5E7EB":added?"#16A34A":"#E8521A", color:outOfStock?"#9CA3AF":"#fff", fontSize:13, fontWeight:600, cursor:outOfStock?"not-allowed":"pointer", transition:"background .25s", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
           {outOfStock ? "Out of Stock" : added ? "✓ Added" : <><Plus size={14}/>Add to Cart</>}
         </button>
@@ -243,7 +245,87 @@ const ProductCard = memo(({ p, cartQty, isFav, added, onAdd, onToggleFav, favLoa
   );
 });
 
-const CartDrawer = memo(({ items, total, count, onUpdate, onRemove, onClear, onClose, loading }) => (
+function ProductDetailView({ product, related, cartMap, favIds, favLoadingMap, addedMap, quantity, onQuantityChange,
+  onAdd, onToggleFav, onOpen, onBack }) {
+  const price = fp(product), outOfStock = product.stock === 0, lowStock = product.stock > 0 && product.stock <= 5;
+  const cartQty = cartMap[product.id] || 0;
+  const isFav = favIds.has(product.id);
+  const favLoading = !!favLoadingMap[product.id];
+  return (
+    <div>
+      <button onClick={onBack}
+        style={{ display:"flex", alignItems:"center", gap:6, background:"none", border:"none", color:"#6B7280", cursor:"pointer", fontSize:13, marginBottom:20, padding:0 }}>
+        <ArrowLeft size={16}/> Back to catalog
+      </button>
+      <div style={{ display:"grid", gridTemplateColumns:"minmax(260px,1fr) minmax(300px,1.3fr)", gap:40, marginBottom:48 }}>
+        <div style={{ background:"#fff", borderRadius:20, border:"1px solid #F0EDE6", display:"flex", alignItems:"center", justifyContent:"center", fontSize:140, minHeight:340, position:"relative" }}>
+          {product.discount > 0 && <div style={{ position:"absolute", top:16, left:16, background:"#E8521A", color:"#fff", fontSize:12, fontWeight:700, padding:"4px 10px", borderRadius:20 }}>-%{product.discount}</div>}
+          {product.seller_id && <div style={{ position:"absolute", top:16, right:16, background:"#7C3AED", color:"#fff", fontSize:10, fontWeight:700, padding:"4px 10px", borderRadius:20 }}>SELLER PRODUCT</div>}
+          <span style={{ opacity:outOfStock?.4:1 }}>{product.emoji}</span>
+        </div>
+        <div>
+          {product.tag && <div style={{ ...TAG_COLORS[product.tag], fontSize:11, fontWeight:600, padding:"4px 10px", borderRadius:20, display:"inline-block", marginBottom:12 }}>{product.tag}</div>}
+          <h1 style={{ fontSize:26, fontWeight:700, marginBottom:8, lineHeight:1.25 }}>{product.name}</h1>
+          <div style={{ fontSize:13, color:"#9CA3AF", textTransform:"uppercase", letterSpacing:.5, marginBottom:14 }}>{product.category_name}</div>
+          <div style={{ marginBottom:18 }}>
+            <Stars rating={product.rating}/>
+            <span style={{ fontSize:13, color:"#9CA3AF", marginLeft:6 }}>({(+product.review_count || 0).toLocaleString("tr-TR")} reviews)</span>
+          </div>
+          <div style={{ display:"flex", alignItems:"baseline", gap:12, marginBottom:18 }}>
+            <span style={{ fontSize:32, fontWeight:800 }}>{fmt(price)}</span>
+            {product.discount > 0 && <span style={{ fontSize:17, color:"#9CA3AF", textDecoration:"line-through" }}>{fmt(+product.price)}</span>}
+          </div>
+          {product.description && <p style={{ fontSize:14, color:"#4B5563", lineHeight:1.7, marginBottom:20, maxWidth:480 }}>{product.description}</p>}
+          {product.seller_name && <div style={{ fontSize:13, color:"#6B7280", marginBottom:20 }}>Sold by <strong>{product.seller_name}</strong></div>}
+
+          <div style={{ marginBottom:20 }}>
+            {outOfStock
+              ? <span style={{ fontSize:13, fontWeight:600, color:"#9CA3AF" }}>Out of stock</span>
+              : lowStock
+                ? <span style={{ fontSize:13, fontWeight:600, color:"#C24A00" }}>⚡ Only {product.stock} left!</span>
+                : <span style={{ fontSize:13, fontWeight:600, color:"#10B981" }}>✓ In stock</span>}
+          </div>
+
+          {!outOfStock && (
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:20 }}>
+              <button onClick={() => onQuantityChange(Math.max(1, quantity - 1))}
+                style={{ width:34, height:34, borderRadius:8, border:"1px solid #E8E4DC", background:"#fff", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}><Minus size={14}/></button>
+              <span style={{ fontSize:16, fontWeight:600, minWidth:28, textAlign:"center" }}>{quantity}</span>
+              <button onClick={() => onQuantityChange(Math.min(product.stock, quantity + 1))}
+                style={{ width:34, height:34, borderRadius:8, border:"1px solid #E8E4DC", background:"#fff", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}><Plus size={14}/></button>
+            </div>
+          )}
+
+          <div style={{ display:"flex", gap:10 }}>
+            <button onClick={() => onAdd(product.id, quantity)} disabled={outOfStock}
+              style={{ flex:1, maxWidth:280, padding:14, borderRadius:12, border:"none", background:outOfStock?"#E5E7EB":"#E8521A", color:outOfStock?"#9CA3AF":"#fff", fontSize:15, fontWeight:700, cursor:outOfStock?"not-allowed":"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+              <ShoppingCart size={17}/> {outOfStock ? "Out of Stock" : "Add to Cart"}
+            </button>
+            <button onClick={() => onToggleFav(product.id)} disabled={favLoading} aria-label={isFav?"Remove from favorites":"Add to favorites"}
+              style={{ width:52, borderRadius:12, border:"1.5px solid #E8E4DC", background:"#fff", cursor:favLoading?"wait":"pointer", display:"flex", alignItems:"center", justifyContent:"center", color:isFav?"#E8521A":"#9CA3AF" }}>
+              {favLoading ? <Spinner size={16}/> : <Heart size={18} fill={isFav?"#E8521A":"none"}/>}
+            </button>
+          </div>
+          {cartQty > 0 && <div style={{ fontSize:12, color:"#6B7280", marginTop:10 }}>Already in cart: {cartQty}</div>}
+        </div>
+      </div>
+
+      {related.length > 0 && (
+        <div>
+          <h2 style={{ fontSize:18, fontWeight:700, marginBottom:16 }}>You might also like</h2>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))", gap:16 }}>
+            {related.map(rp => (
+              <ProductCard key={rp.id} p={rp} cartQty={cartMap[rp.id]||0} isFav={favIds.has(rp.id)}
+                added={!!addedMap[rp.id]} onAdd={onAdd} onToggleFav={onToggleFav} onOpen={onOpen} favLoading={!!favLoadingMap[rp.id]}/>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const CartDrawer = memo(({ items, total, count, onUpdate, onRemove, onClear, onCheckout, onClose, loading }) => (
   <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.45)", zIndex:200, display:"flex", justifyContent:"flex-end" }}
     onClick={e => e.target === e.currentTarget && onClose()} role="dialog" aria-modal="true" aria-label="My Cart">
     <div style={{ background:"#fff", width:380, maxWidth:"90vw", height:"100%", display:"flex", flexDirection:"column", boxShadow:"-4px 0 32px rgba(0,0,0,.12)" }}>
@@ -279,7 +361,7 @@ const CartDrawer = memo(({ items, total, count, onUpdate, onRemove, onClear, onC
             <span style={{ color:"#6B7280" }}>Total</span>
             <span style={{ fontWeight:800, fontSize:18 }}>{fmt(total)}</span>
           </div>
-          <button style={{ width:"100%", padding:13, background:"#E8521A", color:"#fff", border:"none", borderRadius:12, fontSize:15, fontWeight:700, cursor:"pointer", marginBottom:8 }}>Proceed to Checkout →</button>
+          <button onClick={onCheckout} style={{ width:"100%", padding:13, background:"#E8521A", color:"#fff", border:"none", borderRadius:12, fontSize:15, fontWeight:700, cursor:"pointer", marginBottom:8 }}>Proceed to Checkout →</button>
           <button onClick={onClear} style={{ width:"100%", padding:8, background:"none", border:"1px solid #E8E4DC", borderRadius:10, fontSize:13, color:"#9CA3AF", cursor:"pointer" }}>Clear Cart</button>
         </div>
       )}
@@ -320,6 +402,101 @@ const FavDrawer = memo(({ items, onAddToCart, onRemoveFav, onClose }) => (
   </div>
 ));
 
+const CheckoutModal = memo(({ items, total, submitting, error, placedOrder, onSubmit, onClose }) => {
+  const [address, setAddress] = useState("");
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.5)", zIndex:250, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}
+      onClick={e => e.target === e.currentTarget && onClose()} role="dialog" aria-modal="true" aria-label="Checkout">
+      <div style={{ background:"#fff", borderRadius:20, padding:32, maxWidth:420, width:"100%", maxHeight:"85vh", overflowY:"auto", boxSizing:"border-box" }}>
+        {placedOrder ? (
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontSize:48, marginBottom:16 }}>🎉</div>
+            <div style={{ fontSize:18, fontWeight:700, marginBottom:8 }}>Order placed!</div>
+            <div style={{ fontSize:14, color:"#6B7280", marginBottom:4 }}>Order #{placedOrder.id} — {fmt(placedOrder.total_amount)}</div>
+            <div style={{ fontSize:13, color:"#9CA3AF", marginBottom:24, textTransform:"capitalize" }}>Payment: {placedOrder.payment_status}</div>
+            <button onClick={onClose} style={{ width:"100%", padding:13, background:"#E8521A", color:"#fff", border:"none", borderRadius:12, fontSize:15, fontWeight:700, cursor:"pointer" }}>Done</button>
+          </div>
+        ) : (
+          <form onSubmit={e => { e.preventDefault(); onSubmit(address); }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
+              <h2 style={{ fontSize:18, fontWeight:700, margin:0 }}>Checkout</h2>
+              <button type="button" onClick={onClose} style={{ background:"none", border:"none", cursor:"pointer", color:"#6B7280", display:"flex" }}><X size={20}/></button>
+            </div>
+            <div style={{ maxHeight:180, overflowY:"auto", marginBottom:16, border:"1px solid #F0EDE6", borderRadius:12, padding:12 }}>
+              {items.map(item => (
+                <div key={item.id} style={{ display:"flex", justifyContent:"space-between", fontSize:13, padding:"5px 0", gap:8 }}>
+                  <span>{item.emoji} {item.name} × {item.quantity}</span>
+                  <span style={{ fontWeight:600, whiteSpace:"nowrap" }}>{fmt(fp(item) * item.quantity)}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:20, fontSize:15 }}>
+              <span style={{ color:"#6B7280" }}>Total</span>
+              <span style={{ fontWeight:800, fontSize:18 }}>{fmt(total)}</span>
+            </div>
+            <label htmlFor="shippingAddress" style={{ fontSize:13, color:"#374151", display:"block", marginBottom:6 }}>Shipping address</label>
+            <textarea id="shippingAddress" value={address} onChange={e => setAddress(e.target.value)} rows={3} required
+              placeholder="Street, city, postal code..."
+              style={{ width:"100%", padding:"10px 14px", border:"1.5px solid #E5E7EB", borderRadius:10, fontSize:14, outline:"none", resize:"vertical", fontFamily:"inherit", boxSizing:"border-box", marginBottom:16 }}/>
+            {error && (
+              <div style={{ display:"flex", alignItems:"center", gap:8, background:"#FEF2F2", border:"1px solid #FCA5A5", borderRadius:10, padding:"10px 14px", marginBottom:16 }}>
+                <AlertCircle size={15} color="#DC2626"/><span style={{ fontSize:13, color:"#DC2626" }}>{error}</span>
+              </div>
+            )}
+            <button type="submit" disabled={submitting}
+              style={{ width:"100%", padding:13, background:submitting?"#9CA3AF":"#E8521A", color:"#fff", border:"none", borderRadius:12, fontSize:15, fontWeight:700, cursor:submitting?"not-allowed":"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+              {submitting ? <><Spinner size={18} color="#fff"/> Placing order...</> : `Place Order — ${fmt(total)}`}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+});
+
+const OrderHistoryDrawer = memo(({ orders, loading, expandedId, expandedDetail, onExpand, onClose }) => (
+  <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.45)", zIndex:200, display:"flex", justifyContent:"flex-end" }}
+    onClick={e => e.target === e.currentTarget && onClose()} role="dialog" aria-modal="true" aria-label="My Orders">
+    <div style={{ background:"#fff", width:380, maxWidth:"90vw", height:"100%", display:"flex", flexDirection:"column", boxShadow:"-4px 0 32px rgba(0,0,0,.12)" }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"20px 20px 16px", borderBottom:"1px solid #F0EDE6" }}>
+        <h2 style={{ fontSize:18, fontWeight:700, margin:0 }}>📦 My Orders</h2>
+        <button onClick={onClose} style={{ background:"none", border:"none", cursor:"pointer", color:"#6B7280", display:"flex" }}><X size={20}/></button>
+      </div>
+      <div style={{ flex:1, overflowY:"auto", padding:"12px 0" }}>
+        {loading
+          ? <div style={{ display:"flex", justifyContent:"center", padding:48 }}><Spinner size={32}/></div>
+          : orders.length === 0
+            ? <div style={{ textAlign:"center", padding:"48px 24px", color:"#9CA3AF" }}><ClipboardList size={48} style={{ margin:"0 auto 12px", display:"block" }}/><p>You haven't placed any orders yet</p></div>
+            : orders.map(o => (
+              <div key={o.id} style={{ borderBottom:"1px solid #F3F4F6" }}>
+                <button onClick={() => onExpand(o.id)}
+                  style={{ width:"100%", display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 20px", background:"none", border:"none", cursor:"pointer", textAlign:"left" }}>
+                  <div>
+                    <div style={{ fontSize:13, fontWeight:600 }}>Order #{o.id}</div>
+                    <div style={{ fontSize:11, color:"#9CA3AF", textTransform:"capitalize" }}>{o.status}</div>
+                  </div>
+                  <span style={{ fontSize:14, fontWeight:700 }}>{fmt(o.total_amount)}</span>
+                </button>
+                {expandedId === o.id && (
+                  <div style={{ padding:"0 20px 14px" }}>
+                    {expandedDetail
+                      ? expandedDetail.items.map(it => (
+                        <div key={it.id} style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:"#6B7280", padding:"3px 0", gap:8 }}>
+                          <span>{it.product_name} × {it.quantity}</span><span style={{ textTransform:"capitalize", whiteSpace:"nowrap" }}>{it.status}</span>
+                        </div>
+                      ))
+                      : <div style={{ padding:"6px 0" }}><Spinner size={16}/></div>
+                    }
+                  </div>
+                )}
+              </div>
+            ))
+        }
+      </div>
+    </div>
+  </div>
+));
+
 // ─── CUSTOMER APP ─────────────────────────────────────────────────────────────
 function CustomerApp({ user, token, onLogout }) {
   const [products,    setProducts]    = useState([]);
@@ -336,6 +513,17 @@ function CustomerApp({ user, token, onLogout }) {
   const [favLoading,  setFavLoading]  = useState({});
   const [cartLoading, setCartLoading] = useState(false);
   const [initLoading, setInitLoading] = useState(true);
+  const [orders,             setOrders]             = useState([]);
+  const [ordersOpen,         setOrdersOpen]         = useState(false);
+  const [ordersLoading,      setOrdersLoading]      = useState(false);
+  const [expandedOrderId,    setExpandedOrderId]    = useState(null);
+  const [expandedOrder,      setExpandedOrder]      = useState(null);
+  const [checkoutOpen,       setCheckoutOpen]       = useState(false);
+  const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
+  const [checkoutError,      setCheckoutError]      = useState("");
+  const [placedOrder,        setPlacedOrder]        = useState(null);
+  const [selectedProductId, setSelectedProductId] = useState(null);
+  const [detailQuantity,    setDetailQuantity]    = useState(1);
   const timerRef = useRef({});
 
   useEffect(() => {
@@ -391,11 +579,11 @@ function CustomerApp({ user, token, onLogout }) {
   const favIds    = useMemo(() => new Set(favItems.map(p => p.id)), [favItems]);
   const allCats   = useMemo(() => ["All", ...categories.map(c => c.name)], [categories]);
 
-  const addToCart = useCallback(async pid => {
+  const addToCart = useCallback(async (pid, qty = 1) => {
     setAddedMap(m => ({ ...m, [pid]: true }));
     clearTimeout(timerRef.current[pid]);
     timerRef.current[pid] = setTimeout(() => setAddedMap(m => ({ ...m, [pid]: false })), 1400);
-    try { await api.cart.add(pid, 1, token); await refreshCart(); }
+    try { await api.cart.add(pid, qty, token); await refreshCart(); }
     catch (e) { console.error(e); }
   }, [token, refreshCart]);
 
@@ -434,6 +622,53 @@ function CustomerApp({ user, token, onLogout }) {
 
   const addFromFav = useCallback(pid => { addToCart(pid); setFavOpen(false); setCartOpen(true); }, [addToCart]);
 
+  const openOrders = useCallback(async () => {
+    setOrdersOpen(true); setFavOpen(false); setCartOpen(false);
+    setOrdersLoading(true);
+    try { setOrders(await api.orders.list(token)); }
+    catch (e) { console.error(e); }
+    finally { setOrdersLoading(false); }
+  }, [token]);
+
+  const expandOrder = useCallback(async id => {
+    if (expandedOrderId === id) { setExpandedOrderId(null); setExpandedOrder(null); return; }
+    setExpandedOrderId(id); setExpandedOrder(null);
+    try { setExpandedOrder(await api.orders.get(id, token)); }
+    catch (e) { console.error(e); }
+  }, [expandedOrderId, token]);
+
+  const openCheckout = useCallback(() => {
+    setCheckoutError(""); setPlacedOrder(null); setCheckoutOpen(true);
+  }, []);
+
+  const closeCheckout = useCallback(() => {
+    setCheckoutOpen(false); setCartOpen(false);
+  }, []);
+
+  const submitCheckout = useCallback(async address => {
+    setCheckoutSubmitting(true); setCheckoutError("");
+    try {
+      const order = await api.orders.create(address, token);
+      setPlacedOrder(order);
+      await refreshCart();
+    } catch (e) { setCheckoutError(e.message || "An error occurred."); }
+    finally { setCheckoutSubmitting(false); }
+  }, [token, refreshCart]);
+
+  const openProduct = useCallback(id => { setSelectedProductId(id); setDetailQuantity(1); }, []);
+  const closeProduct = useCallback(() => setSelectedProductId(null), []);
+
+  const selectedProduct = useMemo(
+    () => products.find(p => p.id === selectedProductId) || null,
+    [products, selectedProductId]
+  );
+  const relatedProducts = useMemo(() => {
+    if (!selectedProduct) return [];
+    return products
+      .filter(p => p.id !== selectedProduct.id && p.category_name === selectedProduct.category_name)
+      .slice(0, 4);
+  }, [products, selectedProduct]);
+
   const ICONS = { "All":"🛍️","Electronics":"💻","Clothing":"👕","Home & Living":"🏠","Sports":"⚽","Books":"📚","Beauty":"✨" };
 
   if (initLoading) return (
@@ -448,10 +683,10 @@ function CustomerApp({ user, token, onLogout }) {
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       <header style={{ background:"#fff", borderBottom:"1px solid #E8E4DC", position:"sticky", top:0, zIndex:100, padding:"0 24px" }}>
         <div style={{ maxWidth:1280, margin:"0 auto", display:"flex", alignItems:"center", gap:16, height:64 }}>
-          <span style={{ fontSize:22, fontWeight:900, letterSpacing:-1, whiteSpace:"nowrap" }}>Vend<span style={{ color:"#E8521A" }}>oo</span></span>
+          <span onClick={closeProduct} style={{ fontSize:22, fontWeight:900, letterSpacing:-1, whiteSpace:"nowrap", cursor:"pointer" }}>Vend<span style={{ color:"#E8521A" }}>oo</span></span>
           <div style={{ flex:1, maxWidth:520, position:"relative" }}>
             <Search size={16} style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)", color:"#9CA3AF", pointerEvents:"none" }}/>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search products..."
+            <input value={search} onChange={e => { setSearch(e.target.value); setSelectedProductId(null); }} placeholder="Search products..."
               style={{ width:"100%", padding:"10px 16px 10px 40px", border:"1.5px solid #E8E4DC", borderRadius:12, fontSize:14, background:"#F8F7F4", outline:"none", boxSizing:"border-box" }}/>
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:8, marginLeft:"auto" }}>
@@ -469,44 +704,59 @@ function CustomerApp({ user, token, onLogout }) {
               <ShoppingCart size={18}/> Cart
               {cartCount > 0 && <span style={{ position:"absolute", top:-6, right:-6, background:"#E8521A", color:"#fff", borderRadius:"50%", fontSize:10, fontWeight:700, width:18, height:18, display:"flex", alignItems:"center", justifyContent:"center" }}>{cartCount}</span>}
             </button>
+            <button onClick={openOrders} title="My Orders"
+              style={{ display:"flex", padding:"8px", borderRadius:10, border:"1.5px solid #E8E4DC", background:"#fff", cursor:"pointer", color:"#1A1A1A" }}><ClipboardList size={18}/></button>
             <button onClick={onLogout} title="Log Out"
               style={{ display:"flex", padding:"8px", borderRadius:10, border:"1.5px solid #E8E4DC", background:"#fff", cursor:"pointer", color:"#9CA3AF" }}><LogOut size={18}/></button>
           </div>
         </div>
       </header>
 
-      <div style={{ background:"#fff", borderBottom:"1px solid #E8E4DC", padding:"0 24px" }}>
-        <div style={{ maxWidth:1280, margin:"0 auto", display:"flex", gap:4, overflowX:"auto", padding:"8px 0" }}>
-          {allCats.map(c => (
-            <button key={c} onClick={() => setCat(c)} aria-pressed={cat === c}
-              style={{ display:"flex", alignItems:"center", gap:6, padding:"7px 16px", borderRadius:20, border:"1.5px solid "+(cat===c?"#E8521A":"#E8E4DC"), background:cat===c?"#FFF0E6":"transparent", color:cat===c?"#E8521A":"#4B5563", fontSize:13, fontWeight:cat===c?600:400, cursor:"pointer", whiteSpace:"nowrap" }}>
-              <span>{ICONS[c] || "📦"}</span><span>{c}</span>
-            </button>
-          ))}
+      {!selectedProduct && (
+        <div style={{ background:"#fff", borderBottom:"1px solid #E8E4DC", padding:"0 24px" }}>
+          <div style={{ maxWidth:1280, margin:"0 auto", display:"flex", gap:4, overflowX:"auto", padding:"8px 0" }}>
+            {allCats.map(c => (
+              <button key={c} onClick={() => setCat(c)} aria-pressed={cat === c}
+                style={{ display:"flex", alignItems:"center", gap:6, padding:"7px 16px", borderRadius:20, border:"1.5px solid "+(cat===c?"#E8521A":"#E8E4DC"), background:cat===c?"#FFF0E6":"transparent", color:cat===c?"#E8521A":"#4B5563", fontSize:13, fontWeight:cat===c?600:400, cursor:"pointer", whiteSpace:"nowrap" }}>
+                <span>{ICONS[c] || "📦"}</span><span>{c}</span>
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       <main style={{ maxWidth:1280, margin:"0 auto", padding:24 }}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
-          <span style={{ fontSize:14, color:"#6B7280" }}><strong style={{ color:"#1A1A1A" }}>{filtered.length}</strong> products</span>
-          <select value={sort} onChange={e => setSort(e.target.value)}
-            style={{ padding:"8px 12px", border:"1.5px solid #E8E4DC", borderRadius:8, fontSize:13, background:"#fff", cursor:"pointer", outline:"none" }}>
-            {SORT_OPTS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
-          </select>
-        </div>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))", gap:16 }}>
-          {filtered.length === 0
-            ? <div style={{ gridColumn:"1/-1", textAlign:"center", padding:"64px 24px", color:"#9CA3AF" }}><Package size={48} style={{ margin:"0 auto 12px", display:"block" }}/><p>No products found</p></div>
-            : filtered.map(p => (
-              <ProductCard key={p.id} p={p} cartQty={cartMap[p.id]||0} isFav={favIds.has(p.id)}
-                added={!!addedMap[p.id]} onAdd={addToCart} onToggleFav={toggleFav} favLoading={!!favLoading[p.id]}/>
-            ))
-          }
-        </div>
+        {selectedProduct ? (
+          <ProductDetailView product={selectedProduct} related={relatedProducts}
+            cartMap={cartMap} favIds={favIds} favLoadingMap={favLoading} addedMap={addedMap}
+            quantity={detailQuantity} onQuantityChange={setDetailQuantity}
+            onAdd={addToCart} onToggleFav={toggleFav} onOpen={openProduct} onBack={closeProduct}/>
+        ) : (
+          <>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
+              <span style={{ fontSize:14, color:"#6B7280" }}><strong style={{ color:"#1A1A1A" }}>{filtered.length}</strong> products</span>
+              <select value={sort} onChange={e => setSort(e.target.value)}
+                style={{ padding:"8px 12px", border:"1.5px solid #E8E4DC", borderRadius:8, fontSize:13, background:"#fff", cursor:"pointer", outline:"none" }}>
+                {SORT_OPTS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+              </select>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))", gap:16 }}>
+              {filtered.length === 0
+                ? <div style={{ gridColumn:"1/-1", textAlign:"center", padding:"64px 24px", color:"#9CA3AF" }}><Package size={48} style={{ margin:"0 auto 12px", display:"block" }}/><p>No products found</p></div>
+                : filtered.map(p => (
+                  <ProductCard key={p.id} p={p} cartQty={cartMap[p.id]||0} isFav={favIds.has(p.id)}
+                    added={!!addedMap[p.id]} onAdd={addToCart} onToggleFav={toggleFav} onOpen={openProduct} favLoading={!!favLoading[p.id]}/>
+                ))
+              }
+            </div>
+          </>
+        )}
       </main>
 
-      {cartOpen && <CartDrawer items={cartItems} total={cartTotal} count={cartCount} onUpdate={updateCartItem} onRemove={removeCartItem} onClear={clearCart} onClose={() => setCartOpen(false)} loading={cartLoading}/>}
+      {cartOpen && <CartDrawer items={cartItems} total={cartTotal} count={cartCount} onUpdate={updateCartItem} onRemove={removeCartItem} onClear={clearCart} onCheckout={openCheckout} onClose={() => setCartOpen(false)} loading={cartLoading}/>}
       {favOpen  && <FavDrawer items={favItems} onAddToCart={addFromFav} onRemoveFav={toggleFav} onClose={() => setFavOpen(false)}/>}
+      {checkoutOpen && <CheckoutModal items={cartItems} total={cartTotal} submitting={checkoutSubmitting} error={checkoutError} placedOrder={placedOrder} onSubmit={submitCheckout} onClose={closeCheckout}/>}
+      {ordersOpen   && <OrderHistoryDrawer orders={orders} loading={ordersLoading} expandedId={expandedOrderId} expandedDetail={expandedOrder} onExpand={expandOrder} onClose={() => setOrdersOpen(false)}/>}
     </div>
   );
 }
@@ -525,26 +775,36 @@ function SellerApp({ user, token, onLogout }) {
   const [del,        setDel]        = useState(null);
   const [loading,    setLoading]    = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [orderItems, setOrderItems] = useState([]);
 
   useEffect(() => {
     (async () => {
       try {
-        const [pd, cd] = await Promise.all([
+        const [pd, cd, od] = await Promise.all([
           api.products.list({ sellerId: user.id, limit: 100 }),
           api.categories.list(),
+          api.orders.listForSeller(token),
         ]);
         setProducts(pd.data || []);
         setCategories(cd || []);
+        setOrderItems(od || []);
         if (cd?.length) setForm(f => ({ ...f, categoryId: String(cd[0].id) }));
       } catch (e) { console.error(e); }
       finally { setLoading(false); }
     })();
-  }, [user.id]);
+  }, [user.id, token]);
 
   const refresh = useCallback(async () => {
     const d = await api.products.list({ sellerId: user.id, limit: 100 });
     setProducts(d.data || []);
   }, [user.id]);
+
+  const updateOrderItemStatus = useCallback(async (itemId, status) => {
+    try {
+      const updated = await api.orders.updateItemStatus(itemId, status, token);
+      setOrderItems(prev => prev.map(it => it.id === itemId ? { ...it, status: updated.status } : it));
+    } catch (e) { console.error(e); }
+  }, [token]);
 
   const submitForm = useCallback(async e => {
     e.preventDefault(); setFormErr(""); setSubmitting(true);
@@ -573,6 +833,7 @@ function SellerApp({ user, token, onLogout }) {
 
   const totalValue  = products.reduce((s, p) => s + (+p.price) * (+p.stock), 0);
   const activeCount = products.filter(p => +p.stock > 0).length;
+  const pendingOrderCount = orderItems.filter(it => it.status === "pending" || it.status === "processing").length;
   const fi = field => ({
     value: form[field],
     onChange: e => setForm(prev => ({ ...prev, [field]: e.target.value })),
@@ -603,6 +864,7 @@ function SellerApp({ user, token, onLogout }) {
           {[
             { id:"dashboard", icon:<BarChart3 size={18}/>, label:"Dashboard" },
             { id:"products",  icon:<Package size={18}/>,   label:`My Products (${products.length})` },
+            { id:"orders",    icon:<Truck size={18}/>,      label:`Orders (${orderItems.length})` },
             { id:"form",      icon:<Plus size={18}/>,       label:"New Product" },
           ].map(({ id, icon, label }) => (
             <button key={id} onClick={() => { if (id === "form") { setForm({ ...EMPTY_FORM, categoryId: categories[0]?String(categories[0].id):"" }); setEditId(null); } setView(id); }}
@@ -625,11 +887,12 @@ function SellerApp({ user, token, onLogout }) {
           <div>
             <h1 style={{ fontSize:26, fontWeight:700, marginBottom:6 }}>Hello, {user.name.split(" ")[0]} 👋</h1>
             <p style={{ color:"#6B7280", marginBottom:28 }}>Seller dashboard</p>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:16, marginBottom:32 }}>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:16, marginBottom:32 }}>
               {[
                 { icon:"📦", label:"Total Products", value:products.length, sub:"listed",       color:"#7C3AED" },
                 { icon:"✅", label:"Active Products", value:activeCount,     sub:"in stock",     color:"#10B981" },
                 { icon:"💰", label:"Total Value",     value:fmt(totalValue), sub:"stock × price", color:"#F59E0B" },
+                { icon:"🚚", label:"Pending Orders",  value:pendingOrderCount, sub:"need action",  color:"#E8521A" },
               ].map(({ icon, label, value, sub, color }) => (
                 <div key={label} style={{ background:"#fff", borderRadius:16, padding:24, border:"1px solid #E5E7EB" }}>
                   <div style={{ fontSize:32, marginBottom:12 }}>{icon}</div>
@@ -722,6 +985,45 @@ function SellerApp({ user, token, onLogout }) {
                               <Trash size={13}/>
                             </button>
                           </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Orders */}
+        {view === "orders" && (
+          <div>
+            <h1 style={{ fontSize:24, fontWeight:700, marginBottom:24 }}>Orders</h1>
+            {orderItems.length === 0 ? (
+              <div style={{ background:"#fff", borderRadius:16, padding:48, textAlign:"center", border:"1px solid #E5E7EB", color:"#9CA3AF" }}>
+                <Truck size={48} style={{ margin:"0 auto 12px", display:"block" }}/><p>No orders yet</p>
+              </div>
+            ) : (
+              <div style={{ background:"#fff", borderRadius:16, border:"1px solid #E5E7EB", overflow:"auto" }}>
+                <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                  <thead style={{ background:"#F9FAFB", borderBottom:"1px solid #E5E7EB" }}>
+                    <tr>{["Product","Qty","Unit Price","Shipping Address","Ordered","Status"].map(h => (
+                      <th key={h} style={{ padding:"12px 16px", textAlign:"left", fontSize:12, fontWeight:600, color:"#6B7280", textTransform:"uppercase", letterSpacing:.5, whiteSpace:"nowrap" }}>{h}</th>
+                    ))}</tr>
+                  </thead>
+                  <tbody>
+                    {orderItems.map(it => (
+                      <tr key={it.id} style={{ borderBottom:"1px solid #F3F4F6" }}>
+                        <td style={{ padding:"14px 16px", fontSize:14, fontWeight:500 }}>{it.product_name}</td>
+                        <td style={{ padding:"14px 16px", fontSize:13 }}>{it.quantity}</td>
+                        <td style={{ padding:"14px 16px", fontSize:13, whiteSpace:"nowrap" }}>{fmt(it.unit_price)}</td>
+                        <td style={{ padding:"14px 16px", fontSize:12, color:"#6B7280", maxWidth:220, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{it.shipping_address}</td>
+                        <td style={{ padding:"14px 16px", fontSize:12, color:"#9CA3AF", whiteSpace:"nowrap" }}>{new Date(it.ordered_at).toLocaleDateString()}</td>
+                        <td style={{ padding:"14px 16px" }}>
+                          <select value={it.status} onChange={e => updateOrderItemStatus(it.id, e.target.value)} aria-label={`Status for ${it.product_name}`}
+                            style={{ padding:"6px 10px", border:"1.5px solid #E5E7EB", borderRadius:8, fontSize:12, outline:"none", background:"#fff", cursor:"pointer", textTransform:"capitalize" }}>
+                            {["pending","processing","shipped","delivered","cancelled"].map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
                         </td>
                       </tr>
                     ))}

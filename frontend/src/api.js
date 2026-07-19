@@ -58,3 +58,11 @@ export const favorites = {
   remove: (productId, token)  => del(`/favorites/${productId}`, token),
   check:  (productId, token)  => get(`/favorites/check/${productId}`, token),
 };
+
+export const orders = {
+  create:          (shippingAddress, token) => post("/orders", { shippingAddress }, token),
+  list:            (token)                  => get("/orders", token),
+  get:             (id, token)              => get(`/orders/${id}`, token),
+  listForSeller:   (token)                  => get("/orders/seller/items", token),
+  updateItemStatus:(itemId, status, token)  => put(`/orders/items/${itemId}/status`, { status }, token),
+};
